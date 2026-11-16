@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "The Snooker House",
+    "slug": "the-snooker-house",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.thesnookerhouse.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#101510"
+      }
+    },
+    "extra": {
+      "brand": "The Snooker House",
+      "website": "https://thesnookerhouse.com"
+    }
+  }
+}
