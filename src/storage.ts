@@ -2,7 +2,7 @@
 import { supabase } from "./supabase";
 import { AppData, Booking } from "./types";
 
-const initialData: AppData = {
+export const initialData: AppData = {
   tables: [
     { id: "T1", label: "Table 01", rate: 5, status: "available" },
     { id: "T2", label: "Table 02", rate: 4, status: "available" },
