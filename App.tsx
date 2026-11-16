@@ -1,60 +1,627 @@
-import React, {useEffect, useMemo, useState} from "react";
-import { Alert, SafeAreaView, ScrollView, StatusBar, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { C, money } from "./src/theme";
-import { Lang, words } from "./src/i18n";
-import { AppData, Booking, SnookerTable, TableStatus } from "./src/types";
-import { initialData, loadData, saveData } from "./src/storage";
 
-type Screen = "home" | "book" | "bookings" | "membership" | "tournament" | "cafe" | "admin";
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
-const uid = () => `${Date.now()}-${Math.floor(Math.random()*10000)}`;
+import React, { useEffect, useState } from "react";
+import {
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  StyleSheet
+} from "react-native";
+
+import {
+  AppData,
+  Booking,
+  SnookerTable
+} from "./src/types";
+
+import {
+  initialData,
+  loadData,
+  saveData
+} from "./src/storage";
+
+type ActiveSession = {
+  startedAt: number;
+  customer: string;
+  phone: string;
+};
+
+const formatTime = (seconds: number) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+
+const getDate = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const getStartTime = (timestamp: number) => {
+  const d = new Date(timestamp);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 
 export default function App() {
- const [data,setData] = useState<AppData>(initialData);
- const [ready,setReady] = useState(false);
- const [screen,setScreen] = useState<Screen>("home");
- const [admin,setAdmin] = useState(false);
- const [lang,setLang] = useState<Lang>("en");
- const [name,setName] = useState("");
- const [phone,setPhone] = useState("");
- const [date,setDate] = useState(today());
- const [start,setStart] = useState("18:00");
- const [hours,setHours] = useState("1");
- const [tableId,setTableId] = useState("T1");
- const [tabFilter,setTabFilter] = useState<"all"|"available"|"occupied"|"maintenance">("all");
- const t = words[lang];
- useEffect(()=>{ loadData().then(d=>{setData(d);setReady(true);}); },[]);
- useEffect(()=>{ if(ready) saveData(data); },[data,ready]);
- const activeBookings = data.bookings.filter(b=>b.status==="confirmed");
- const todayRevenue = activeBookings.filter(b=>b.date===today()).reduce((s,b)=>s+b.amount,0);
- const selectedTable = data.tables.find(x=>x.id===tableId) || data.tables[0];
- const amount = selectedTable ? selectedTable.rate * Math.max(1,Number(hours)||1) : 0;
- const filteredTables = data.tables.filter(x=>tabFilter==="all"||x.status===tabFilter);
- const Card = ({children,style}:any)=><View style={[{backgroundColor:C.panel,borderColor:C.line,borderWidth:1,borderRadius:18,padding:16,marginBottom:12},style]}>{children}</View>;
- const Label = ({children}:any)=><Text style={{color:C.muted,fontSize:12,marginBottom:6,letterSpacing:1}}>{children}</Text>;
- const H = ({children}:any)=><Text style={{color:C.text,fontSize:20,fontWeight:"800",marginBottom:12}}>{children}</Text>;
- const Btn = ({title,onPress,secondary=false}:any)=><TouchableOpacity onPress={onPress} style={{backgroundColor:secondary?C.panel2:C.gold,paddingVertical:13,paddingHorizontal:16,borderRadius:12,alignItems:"center",borderWidth:secondary?1:0,borderColor:C.line}}><Text style={{color:secondary?C.text:"#17140D",fontWeight:"800"}}>{title}</Text></TouchableOpacity>;
- const Field = ({label,value,onChangeText,placeholder,keyboardType}:any)=><View style={{marginBottom:12}}><Label>{label}</Label><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder||label} placeholderTextColor="#778078" keyboardType={keyboardType||"default"} style={{backgroundColor:"#0D140F",borderColor:C.line,borderWidth:1,borderRadius:11,padding:13,color:C.text}}/></View>;
- const go = (s:Screen)=>setScreen(s);
- const addBooking = () => {
-  if(!name.trim() || phone.replace(/\D/g,"").length<10) { Alert.alert("Details required","Enter customer name and a valid 10-digit mobile number."); return; }
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^\d{2}:\d{2}$/.test(start)||Number(hours)<1||Number(hours)>12) { Alert.alert("Check booking","Enter a valid date, time and duration (1–12 hours)."); return; }
-  const conflict = activeBookings.some(b=>b.tableId===tableId&&b.date===date&&b.status==="confirmed"&&(()=>{const a=Number(b.start.slice(0,2))*60+Number(b.start.slice(3));const z=a+b.hours*60;const n=Number(start.slice(0,2))*60+Number(start.slice(3));return n<z&&n<1440&&n+Number(hours)*60>a;})());
-  if(conflict) { Alert.alert("Time unavailable","This table already has a booking during that time. Choose another table or time."); return; }
-  const booking:Booking={id:uid(),customer:name.trim(),phone:phone.trim(),tableId,date,start,hours:Number(hours),amount, status:"confirmed",createdAt:new Date().toISOString()};
-  setData(d=>({...d,bookings:[booking,...d.bookings]}));
-  Alert.alert("Booking confirmed",`${booking.id}\n${money(amount)} • ${selectedTable.label}`);
-  setName("");setPhone("");go("bookings");
- };
- const statusText=(s:TableStatus)=>s==="available"?t.available:s==="occupied"?t.occupied:t.maintenance;
- const changeStatus=(id:string,status:TableStatus)=>setData(d=>({...d,tables:d.tables.map(x=>x.id===id?{...x,status}:x)}));
- const Header=()=> <View style={{paddingHorizontal:20,paddingTop:12,paddingBottom:18,flexDirection:"row",justifyContent:"space-between",alignItems:"center"}}><View><Text style={{color:C.gold,fontSize:11,fontWeight:"900",letterSpacing:3}}>THE</Text><Text style={{color:C.text,fontSize:23,fontWeight:"900",letterSpacing:1}}>SNOOKER HOUSE</Text><Text style={{color:C.muted,fontSize:10,letterSpacing:2}}>PLAY • COMPETE • CONNECT</Text></View><TouchableOpacity onPress={()=>setLang(l=>l==="en"?"hi":l==="hi"?"mr":"en")} style={{borderColor:C.gold,borderWidth:1,borderRadius:10,padding:9}}><Text style={{color:C.gold,fontWeight:"800"}}>{lang.toUpperCase()}</Text></TouchableOpacity></View>;
- const Nav=()=> <View style={{flexDirection:"row",flexWrap:"wrap",gap:7,paddingHorizontal:16,paddingBottom:14}}>{(admin?[["admin",t.admin],["book",t.newBooking],["bookings",t.myBookings]]:[["home",t.home],["book",t.book],["bookings",t.myBookings],["membership",t.membership],["tournament",t.tournament],["cafe",t.cafe]] as [Screen,string][]).map(([s,label])=><TouchableOpacity key={s} onPress={()=>go(s)} style={{backgroundColor:screen===s?C.gold:C.panel2,paddingHorizontal:12,paddingVertical:9,borderRadius:20}}><Text style={{color:screen===s?"#17140D":C.text,fontSize:12,fontWeight:"700"}}>{label}</Text></TouchableOpacity>)}</View>;
- const Home=()=> <><Card><Text style={{color:C.gold,fontSize:12,letterSpacing:2,fontWeight:"800"}}>WELCOME TO YOUR CLUB</Text><Text style={{color:C.text,fontSize:27,fontWeight:"900",marginTop:8}}>{t.welcome}</Text><Text style={{color:C.muted,marginTop:8,lineHeight:21}}>Reserve your favourite table, bring your friends and enjoy the game.</Text><View style={{marginTop:16}}><Btn title={t.book} onPress={()=>go("book")}/></View></Card><View style={{flexDirection:"row",gap:10}}><Card style={{flex:1}}><Label>TABLES</Label><Text style={{color:C.gold,fontSize:26,fontWeight:"900"}}>{data.tables.length}</Text></Card><Card style={{flex:1}}><Label>AVAILABLE NOW</Label><Text style={{color:C.gold,fontSize:26,fontWeight:"900"}}>{data.tables.filter(x=>x.status==="available").length}</Text></Card></View><H>Club facilities</H><Card><Text style={{color:C.text,fontWeight:"700"}}>♧ Snooker & pool tables</Text><Text style={{color:C.muted,marginTop:6}}>Table reservations • Membership • Tournaments • Cafe</Text></Card></>;
- const BookingForm=()=> <><H>{t.newBooking}</H><Card><Field label={t.name} value={name} onChangeText={setName}/><Field label={t.phone} value={phone} onChangeText={setPhone} keyboardType="phone-pad"/><Label>{t.selectTable}</Label><View style={{flexDirection:"row",flexWrap:"wrap",gap:8,marginBottom:14}}>{data.tables.map(x=><TouchableOpacity key={x.id} disabled={x.status==="maintenance"} onPress={()=>setTableId(x.id)} style={{padding:11,borderRadius:10,borderWidth:1,borderColor:tableId===x.id?C.gold:C.line,backgroundColor:tableId===x.id?C.green:C.panel2}}><Text style={{color:C.text,fontWeight:"700"}}>{x.label}</Text><Text style={{color:C.gold,fontSize:11}}>{money(x.rate)}/hr</Text></TouchableOpacity>)}</View><Field label={t.date} value={date} onChangeText={setDate}/><Field label={t.start} value={start} onChangeText={setStart}/><Field label={t.hours} value={hours} onChangeText={setHours} keyboardType="numeric"/><View style={{backgroundColor:"#0D140F",padding:14,borderRadius:12,marginBottom:14}}><Label>{t.total}</Label><Text style={{color:C.gold,fontSize:26,fontWeight:"900"}}>{money(amount)}</Text></View><Btn title={t.confirm} onPress={addBooking}/><Text style={{color:C.muted,fontSize:11,marginTop:10,lineHeight:17}}>Demo booking only: online payment and live multi-device availability require backend/payment credentials before launch.</Text></Card></>;
- const Bookings=()=> <><H>{t.myBookings}</H>{data.bookings.length===0?<Card><Text style={{color:C.muted}}>{t.noBookings}</Text></Card>:data.bookings.map(b=><Card key={b.id}><View style={{flexDirection:"row",justifyContent:"space-between"}}><Text style={{color:C.text,fontWeight:"800"}}>{b.customer}</Text><Text style={{color:b.status==="confirmed"?C.gold:C.red,fontWeight:"800"}}>{b.status.toUpperCase()}</Text></View><Text style={{color:C.muted,marginTop:7}}>{b.tableId} • {b.date} • {b.start} • {b.hours} hr</Text><Text style={{color:C.gold,fontSize:18,fontWeight:"900",marginTop:7}}>{money(b.amount)}</Text><Text style={{color:"#758078",fontSize:10,marginTop:5}}>Booking ID: {b.id}</Text>{b.status==="confirmed"&&<View style={{marginTop:10}}><Btn secondary title="Cancel booking" onPress={()=>Alert.alert("Cancel booking?","This demo cancellation changes the booking status.",[{text:"Keep"},{text:"Cancel",style:"destructive",onPress:()=>setData(d=>({...d,bookings:d.bookings.map(x=>x.id===b.id?{...x,status:"cancelled"}:x)}))}])}/></View>}</Card>)}</>;
- const Admin=()=> <><H>{t.admin}</H><View style={{flexDirection:"row",gap:9}}><Card style={{flex:1}}><Label>{t.revenue}</Label><Text style={{color:C.gold,fontSize:24,fontWeight:"900"}}>{money(todayRevenue)}</Text></Card><Card style={{flex:1}}><Label>CONFIRMED BOOKINGS</Label><Text style={{color:C.gold,fontSize:24,fontWeight:"900"}}>{activeBookings.length}</Text></Card></View><Card><Label>TABLE STATUS MANAGEMENT</Label>{data.tables.map(x=><View key={x.id} style={{paddingVertical:12,borderBottomWidth:1,borderColor:C.line}}><View style={{flexDirection:"row",justifyContent:"space-between",alignItems:"center"}}><View><Text style={{color:C.text,fontWeight:"800"}}>{x.label}</Text><Text style={{color:C.muted,fontSize:12}}>{money(x.rate)}/hour • {statusText(x.status)}</Text></View><View style={{flexDirection:"row",gap:5}}>{(["available","occupied","maintenance"] as TableStatus[]).map(s=><TouchableOpacity key={s} onPress={()=>changeStatus(x.id,s)} style={{backgroundColor:x.status===s?C.gold:C.panel2,padding:7,borderRadius:8}}><Text style={{color:x.status===s?"#17140D":C.text,fontSize:9,fontWeight:"800"}}>{s==="available"?"Free":s==="occupied"?"Busy":"Fix"}</Text></TouchableOpacity>)}</View></View></View>)}</Card><H>{t.recent}</H>{data.bookings.slice(0,8).map(b=><Card key={b.id}><Text style={{color:C.text,fontWeight:"800"}}>{b.customer} • {money(b.amount)}</Text><Text style={{color:C.muted,fontSize:12,marginTop:5}}>{b.tableId} • {b.date} • {b.start} • {b.phone}</Text></Card>)}<Card><Label>BUSINESS SETUP CHECKLIST</Label>{["Set exact table rates and table count","Connect secure backend for staff/customer sync","Configure UPI/payment gateway on server","Add verified club address, opening hours and contact","Set up privacy policy, terms and cancellation rules"].map(x=><Text key={x} style={{color:C.muted,marginTop:8}}>□ {x}</Text>)}</Card></>;
- const Placeholder=({title,desc}:any)=><Card><H>{title}</H><Text style={{color:C.muted,lineHeight:22}}>{desc}</Text><Text style={{color:C.gold,fontWeight:"800",marginTop:12}}>Coming in next implementation phase</Text></Card>;
- if(!ready) return <SafeAreaView style={{flex:1,backgroundColor:C.bg,justifyContent:"center",alignItems:"center"}}><Text style={{color:C.gold,fontSize:20,fontWeight:"900"}}>THE SNOOKER HOUSE</Text><Text style={{color:C.muted,marginTop:8}}>Loading club...</Text></SafeAreaView>;
- return <SafeAreaView style={{flex:1,backgroundColor:C.bg}}><StatusBar barStyle="light-content" backgroundColor={C.bg}/><Header/><View style={{paddingHorizontal:20,marginBottom:10,flexDirection:"row",justifyContent:"space-between",alignItems:"center"}}><Text style={{color:C.muted,fontSize:11}}>{admin?"OWNER WORKSPACE":"PLAYER EXPERIENCE"}</Text><TouchableOpacity onPress={()=>{setAdmin(v=>!v);go(admin?"home":"admin");}}><Text style={{color:C.gold,fontWeight:"800",fontSize:12}}>{admin?t.customerMode:t.adminMode} ↗</Text></TouchableOpacity></View><Nav/><ScrollView contentContainerStyle={{paddingHorizontal:18,paddingBottom:36}}>{screen==="home"&&<Home/>}{screen==="book"&&<BookingForm/>}{screen==="bookings"&&<Bookings/>}{screen==="admin"&&<Admin/>}{screen==="membership"&&<Placeholder title={t.membership} desc="Monthly and annual membership plans, member QR cards, renewals, wallet credits and loyalty rewards."/>}{screen==="tournament"&&<Placeholder title={t.tournament} desc="Tournament creation, player registration, brackets, match scheduling, scores, rankings and prize tracking."/>}{screen==="cafe"&&<Placeholder title={t.cafe} desc="Digital menu, table-side orders, kitchen queue, stock control and combined session billing."/>}</ScrollView><View style={{padding:10,borderTopWidth:1,borderColor:C.line,alignItems:"center"}}><Text style={{color:C.muted,fontSize:10}}>THE SNOOKER HOUSE • LUXURY CLUB EXPERIENCE</Text></View></SafeAreaView>;
+  const [data, setData] = useState<AppData>(initialData);
+  const [ready, setReady] = useState(false);
+  const [screen, setScreen] = useState<"home" | "history">("home");
+
+  const [customer, setCustomer] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const [active, setActive] = useState<Record<string, ActiveSession>>({});
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    loadData().then(saved => {
+      setData(saved);
+      setReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (ready) {
+      saveData(data);
+    }
+  }, [data, ready]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const startGame = (table: SnookerTable) => {
+    if (!customer.trim()) {
+      Alert.alert("Customer Required", "Enter customer name first.");
+      return;
+    }
+
+    if (!/^\d{10}$/.test(phone.trim())) {
+      Alert.alert("Invalid Mobile", "Enter a valid 10 digit mobile number.");
+      return;
+    }
+
+    if (table.status === "maintenance") {
+      Alert.alert("Unavailable", "This table is under maintenance.");
+      return;
+    }
+
+    if (active[table.id]) {
+      Alert.alert("Already Running", "This table is already occupied.");
+      return;
+    }
+
+    setActive(prev => ({
+      ...prev,
+      [table.id]: {
+        startedAt: Date.now(),
+        customer: customer.trim(),
+        phone: phone.trim()
+      }
+    }));
+
+    setCustomer("");
+    setPhone("");
+  };
+
+  const stopGame = (table: SnookerTable) => {
+    const session = active[table.id];
+
+    if (!session) return;
+
+    const elapsedSeconds = Math.floor(
+      (Date.now() - session.startedAt) / 1000
+    );
+
+    const minutes = Math.max(1, Math.ceil(elapsedSeconds / 60));
+    const amount = minutes * table.rate;
+
+    const booking: Booking = {
+      id: `${Date.now()}`,
+      customer: session.customer,
+      phone: session.phone,
+      tableId: table.id,
+      date: getDate(),
+      start: getStartTime(session.startedAt),
+      hours: minutes / 60,
+      amount,
+      status: "confirmed"
+    };
+
+    setData(prev => ({
+      ...prev,
+      bookings: [booking, ...prev.bookings]
+    }));
+
+    setActive(prev => {
+      const updated = { ...prev };
+      delete updated[table.id];
+      return updated;
+    });
+
+    Alert.alert(
+      "Game Completed",
+      `Customer: ${session.customer}\nTable: ${table.label}\nPlaying: ${minutes} minutes\nRate: ₹${table.rate}/minute\n\nTotal Bill: ₹${amount}`
+    );
+  };
+
+  const toggleMaintenance = (table: SnookerTable) => {
+    if (active[table.id]) {
+      Alert.alert("Stop Game", "Stop the current game first.");
+      return;
+    }
+
+    setData(prev => ({
+      ...prev,
+      tables: prev.tables.map(t =>
+        t.id === table.id
+          ? {
+              ...t,
+              status:
+                t.status === "maintenance"
+                  ? "available"
+                  : "maintenance"
+            }
+          : t
+      )
+    }));
+  };
+
+  const revenue = data.bookings
+    .filter(b => b.status === "confirmed")
+    .reduce((sum, b) => sum + b.amount, 0);
+
+  const todayRevenue = data.bookings
+    .filter(b => b.date === getDate() && b.status === "confirmed")
+    .reduce((sum, b) => sum + b.amount, 0);
+
+  const totalGames = data.bookings.length;
+
+  const elapsed = (id: string) => {
+    const session = active[id];
+    if (!session) return 0;
+
+    return Math.floor((now - session.startedAt) / 1000);
+  };
+
+  if (!ready) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.loading}>Loading The Snooker House...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#101010" />
+
+      <ScrollView contentContainerStyle={styles.content}>
+
+        <View style={styles.header}>
+          <Text style={styles.logo}>THE SNOOKER HOUSE</Text>
+          <Text style={styles.subtitle}>Premium Snooker Club</Text>
+        </View>
+
+        <View style={styles.nav}>
+          <TouchableOpacity
+            style={[styles.navButton, screen === "home" && styles.selected]}
+            onPress={() => setScreen("home")}
+          >
+            <Text style={styles.navText}>HOME</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.navButton, screen === "history" && styles.selected]}
+            onPress={() => setScreen("history")}
+          >
+            <Text style={styles.navText}>BOOKINGS</Text>
+          </TouchableOpacity>
+        </View>
+
+        {screen === "home" ? (
+          <>
+            <Text style={styles.heading}>Dashboard</Text>
+
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>TODAY'S SALES</Text>
+                <Text style={styles.statValue}>₹{todayRevenue}</Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>TOTAL REVENUE</Text>
+                <Text style={styles.statValue}>₹{revenue}</Text>
+              </View>
+            </View>
+
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>TOTAL GAMES</Text>
+                <Text style={styles.statValue}>{totalGames}</Text>
+              </View>
+
+              <View style={styles.statCard}>
+                <Text style={styles.statLabel}>ACTIVE TABLES</Text>
+                <Text style={styles.statValue}>
+                  {Object.keys(active).length}/3
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.heading}>New Game</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Customer Name"
+              placeholderTextColor="#888"
+              value={customer}
+              onChangeText={setCustomer}
+            />
+
+            <TextInput
+              style={styles.input}
+              placeholder="10 Digit Mobile Number"
+              placeholderTextColor="#888"
+              keyboardType="phone-pad"
+              maxLength={10}
+              value={phone}
+              onChangeText={setPhone}
+            />
+
+            <Text style={styles.heading}>Snooker Tables</Text>
+
+            {data.tables.map(table => {
+              const session = active[table.id];
+              const running = !!session;
+              const seconds = elapsed(table.id);
+              const minutes = Math.ceil(seconds / 60);
+              const bill = minutes * table.rate;
+
+              return (
+                <View style={styles.tableCard} key={table.id}>
+
+                  <View style={styles.tableHeader}>
+                    <Text style={styles.tableName}>{table.label}</Text>
+
+                    <Text style={[
+                      styles.status,
+                      {
+                        color: table.status === "maintenance"
+                          ? "#ff5555"
+                          : running ? "#ffbd45" : "#42d68a"
+                      }
+                    ]}>
+                      {table.status === "maintenance"
+                        ? "MAINTENANCE"
+                        : running ? "OCCUPIED" : "AVAILABLE"}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.rate}>
+                    ₹{table.rate} / minute
+                  </Text>
+
+                  {running && (
+                    <View style={styles.timerBox}>
+                      <Text style={styles.timer}>
+                        {formatTime(seconds)}
+                      </Text>
+
+                      <Text style={styles.bill}>
+                        Playing: {minutes} min
+                      </Text>
+
+                      <Text style={styles.bill}>
+                        Current Bill: ₹{bill}
+                      </Text>
+
+                      <Text style={styles.customerText}>
+                        Customer: {session.customer}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.actions}>
+                    {!running ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.startButton,
+                          table.status === "maintenance" && styles.disabled
+                        ]}
+                        disabled={table.status === "maintenance"}
+                        onPress={() => startGame(table)}
+                      >
+                        <Text style={styles.buttonText}>START GAME</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.stopButton}
+                        onPress={() => stopGame(table)}
+                      >
+                        <Text style={styles.buttonText}>STOP & BILL</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {!running && (
+                      <TouchableOpacity
+                        style={styles.maintenanceButton}
+                        onPress={() => toggleMaintenance(table)}
+                      >
+                        <Text style={styles.buttonText}>
+                          {table.status === "maintenance"
+                            ? "ENABLE"
+                            : "MAINTENANCE"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            <Text style={styles.heading}>Booking History</Text>
+
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>TOTAL COLLECTION</Text>
+              <Text style={styles.statValue}>₹{revenue}</Text>
+            </View>
+
+            {data.bookings.length === 0 ? (
+              <Text style={styles.empty}>
+                No bookings yet.
+              </Text>
+            ) : (
+              data.bookings.map(booking => (
+                <View style={styles.historyCard} key={booking.id}>
+                  <Text style={styles.tableName}>
+                    {booking.customer}
+                  </Text>
+
+                  <Text style={styles.historyText}>
+                    Mobile: {booking.phone}
+                  </Text>
+
+                  <Text style={styles.historyText}>
+                    Table: {booking.tableId}
+                  </Text>
+
+                  <Text style={styles.historyText}>
+                    Date: {booking.date}
+                  </Text>
+
+                  <Text style={styles.historyText}>
+                    Start: {booking.start}
+                  </Text>
+
+                  <Text style={styles.historyText}>
+                    Playing Time: {Math.round(booking.hours * 60)} minutes
+                  </Text>
+
+                  <Text style={styles.historyAmount}>
+                    Bill: ₹{booking.amount}
+                  </Text>
+                </View>
+              ))
+            )}
+          </>
+        )}
+
+        <Text style={styles.footer}>
+          THE SNOOKER HOUSE © 2026
+        </Text>
+
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#101010"
+  },
+  content: {
+    padding: 18,
+    paddingBottom: 40
+  },
+  loading: {
+    color: "#ffffff",
+    textAlign: "center",
+    marginTop: 100
+  },
+  header: {
+    paddingVertical: 24,
+    alignItems: "center"
+  },
+  logo: {
+    color: "#d6ad60",
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: 2
+  },
+  subtitle: {
+    color: "#aaaaaa",
+    marginTop: 6
+  },
+  nav: {
+    flexDirection: "row",
+    marginBottom: 24,
+    gap: 10
+  },
+  navButton: {
+    flex: 1,
+    padding: 14,
+    backgroundColor: "#242424",
+    borderRadius: 8,
+    alignItems: "center"
+  },
+  selected: {
+    backgroundColor: "#99733b"
+  },
+  navText: {
+    color: "#ffffff",
+    fontWeight: "bold"
+  },
+  heading: {
+    color: "#d6ad60",
+    fontSize: 21,
+    fontWeight: "bold",
+    marginTop: 20,
+    marginBottom: 14
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: "#202020",
+    padding: 16,
+    borderRadius: 10,
+    marginBottom: 10
+  },
+  statLabel: {
+    color: "#999999",
+    fontSize: 11
+  },
+  statValue: {
+    color: "#d6ad60",
+    fontSize: 24,
+    fontWeight: "bold",
+    marginTop: 8
+  },
+  input: {
+    backgroundColor: "#202020",
+    borderColor: "#444444",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 14,
+    color: "#ffffff",
+    marginBottom: 12,
+    fontSize: 15
+  },
+  tableCard: {
+    backgroundColor: "#202020",
+    borderRadius: 12,
+    padding: 17,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#373737"
+  },
+  tableHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  tableName: {
+    color: "#ffffff",
+    fontSize: 19,
+    fontWeight: "bold"
+  },
+  status: {
+    fontSize: 11,
+    fontWeight: "bold"
+  },
+  rate: {
+    color: "#d6ad60",
+    fontSize: 17,
+    marginTop: 12
+  },
+  timerBox: {
+    backgroundColor: "#151515",
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 15
+  },
+  timer: {
+    color: "#42d68a",
+    fontSize: 30,
+    fontWeight: "bold",
+    textAlign: "center"
+  },
+  bill: {
+    color: "#ffffff",
+    fontSize: 16,
+    marginTop: 8,
+    textAlign: "center"
+  },
+  customerText: {
+    color: "#aaaaaa",
+    textAlign: "center",
+    marginTop: 8
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16
+  },
+  startButton: {
+    flex: 1,
+    backgroundColor: "#168b54",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center"
+  },
+  stopButton: {
+    flex: 1,
+    backgroundColor: "#c53e3e",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center"
+  },
+  maintenanceButton: {
+    backgroundColor: "#555555",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center"
+  },
+  disabled: {
+    opacity: 0.4
+  },
+  buttonText: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 12
+  },
+  historyCard: {
+    backgroundColor: "#202020",
+    padding: 17,
+    borderRadius: 10,
+    marginBottom: 12
+  },
+  historyText: {
+    color: "#bbbbbb",
+    marginTop: 7
+  },
+  historyAmount: {
+    color: "#42d68a",
+    fontWeight: "bold",
+    fontSize: 20,
+    marginTop: 12
+  },
+  empty: {
+    color: "#aaaaaa",
+    textAlign: "center",
+    marginTop: 40
+  },
+  footer: {
+    color: "#666666",
+    textAlign: "center",
+    marginTop: 35,
+    fontSize: 11
+  }
+});
